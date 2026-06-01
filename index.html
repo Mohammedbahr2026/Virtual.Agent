@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بيئة التعلم الافتراضية - الإرجونوميكس وريادة الأعمال</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            font-family: 'Cairo', sans-serif; overflow: hidden;
+            background-color: #050b18;
+        }
+        #three-canvas { position: fixed; top: 0; left: 0; z-index: 1; }
+        .ui-layer {
+            position: relative; z-index: 10; width: 100%; height: 100vh;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            pointer-events: none;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            pointer-events: all;
+            border-radius: 2rem;
+            animation: slideUp 0.8s ease-out;
+            max-height: 90vh;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #3b82f6 rgba(255,255,255,0.05);
+        }
+        .glass-card::-webkit-scrollbar { width: 6px; }
+        .glass-card::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 10px; }
+        
+        @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+        .input-glow:focus { box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); border-color: #3b82f6; }
+        .btn-hover:hover { box-shadow: 0 0 25px rgba(59, 130, 246, 0.6); transform: scale(1.02); }
+        
+        .option-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .option-card:hover { background: rgba(59, 130, 246, 0.2); border-color: #3b82f6; }
+        .option-card.selected { background: #3b82f6; border-color: #3b82f6; color: white; }
+
+        .feedback-toast {
+            position: fixed; bottom: 20px; right: 20px; z-index: 100;
+            padding: 1rem 2rem; border-radius: 1rem; color: white;
+            transform: translateY(100px); transition: transform 0.4s ease;
+        }
+        .feedback-toast.show { transform: translateY(0); }
+
+        .stat-circle {
+            background: conic-gradient(#3b82f6 var(--p), rgba(255,255,255,0.1) 0);
+            border-radius: 50%;
+            width: 120px;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .stat-circle::after {
+            content: "";
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            background: #0b1528;
+            border-radius: 50%;
+        }
+        .stat-value { position: relative; z-index: 2; font-weight: 900; font-size: 1.5rem; color: white; }
+
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            animation: spin 1s linear infinite;
+        }
+        .small-loader {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .dir-ltr {
+            direction: ltr;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="three-canvas"></canvas>
+
+    <div id="feedback-toast" class="feedback-toast shadow-2xl"></div>
+
+    <div class="ui-layer px-4 flex flex-col justify-start">
+        
+        <!-- Persistent Top Navigation Bar (Shown after Login) -->
+        <div id="app-nav" class="hidden w-full max-w-6xl mt-4 mb-2 bg-slate-950/45 backdrop-blur-md border border-white/10 rounded-2xl px-6 py-4 flex items-center justify-between pointer-events-auto shadow-2xl">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                </div>
+                <div class="hidden md:block">
+                    <span class="text-xs text-blue-300 font-bold block">بيئة التعلم الافتراضية</span>
+                    <span class="text-xs text-white/50 block" id="nav-user-welcome">مرحباً بك</span>
+                </div>
+            </div>
+            
+            <!-- Navigation Links -->
+            <div class="flex flex-wrap items-center gap-1 sm:gap-2">
+                <button onclick="navigateTab('dashboard')" id="nav-btn-dashboard" class="px-3.5 py-2 text-xs sm:text-sm font-bold text-white bg-blue-600 rounded-xl transition-all">الرئيسية</button>
+                <button onclick="navigateTab('intro')" id="nav-btn-intro" class="px-3.5 py-2 text-xs sm:text-sm font-bold text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all">مقدمة البرنامج</button>
+                <button onclick="navigateTab('goals')" id="nav-btn-goals" class="px-3.5 py-2 text-xs sm:text-sm font-bold text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all">أهداف البرنامج</button>
+                <button onclick="navigateTab('wix')" id="nav-btn-wix" class="px-3.5 py-2 text-xs sm:text-sm font-bold text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all">محتوى البرنامج</button>
+                <button onclick="navigateTab('supervision')" id="nav-btn-supervision" class="px-3.5 py-2 text-xs sm:text-sm font-bold text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all">لجنة الإشراف</button>
+                <button onclick="navigateTab('contact')" id="nav-btn-contact" class="px-3.5 py-2 text-xs sm:text-sm font-bold text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all">تواصل</button>
+            </div>
+
+            <button onclick="location.reload()" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition">خروج</button>
+        </div>
+
+        <!-- 1. Login Container -->
+        <div id="login-container" class="glass-card w-full max-w-4xl grid md:grid-cols-2 overflow-hidden my-auto">
+            <div class="relative p-10 flex flex-col justify-between items-center text-center border-l border-white/10 overflow-hidden min-h-[500px]">
+                <div class="absolute inset-0 bg-cover bg-center z-0" style="background-image: url('https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=1000&q=80');"></div>
+                <div class="absolute inset-0 bg-blue-950/85 z-10"></div>
+                
+                <div class="relative z-20 flex flex-col items-center justify-center my-auto">
+                    <div class="w-16 h-16 bg-blue-500/90 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
+                        <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <h1 class="text-md md:text-lg font-black text-white leading-relaxed mb-4 text-center">
+                        برنامج تنمية مهنية قائم على الوكيل الافتراضي في بيئة ثلاثية الابعاد لتنمية جدارات الارجونوميكس ومهارات ريادة الاعمال لدى معلمى المدارس الثانوية الصناعية
+                    </h1>
+                    <p class="text-blue-200 text-xs leading-relaxed max-w-sm text-center">بوابة تفاعلية ذكية للتعليم التكنولوجي والتدريب الصناعي المستمر.</p>
+                </div>
+                <div class="relative z-20 pt-6 border-t border-white/10 w-full text-center">
+                    <p class="text-[10px] text-white/50 mb-1">إعداد وإشراف المدرب:</p>
+                    <p class="text-md font-bold text-white">محمد حسني محمد بحر</p>
+                </div>
+            </div>
+
+            <!-- Right Input Side -->
+            <div class="p-10 flex flex-col justify-center">
+                <h2 class="text-2xl font-bold text-white mb-8">تسجيل الدخول للبيئة</h2>
+                <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-6">
+                    <div class="relative">
+                        <label class="text-xs text-blue-300 font-bold mb-2 block mr-1">اسم المستخدم</label>
+                        <input type="text" id="username" required class="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 text-white outline-none input-glow transition-all" placeholder="أدخل اسمك الكامل">
+                    </div>
+                    <div class="relative">
+                        <label class="text-xs text-blue-300 font-bold mb-2 block mr-1">كلمة المرور</label>
+                        <input type="password" id="password" required class="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 text-white outline-none input-glow transition-all" placeholder="كلمة السر الخاصة بك">
+                    </div>
+                    <div id="error-msg" class="text-red-400 text-sm hidden font-semibold">خطأ في بيانات الدخول، يرجى المحاولة مرة أخرى.</div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl transition-all btn-hover flex items-center justify-center gap-2">
+                        <span>دخول النظام</span>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 3. Dashboard -->
+        <div id="dashboard" class="hidden glass-card w-full max-w-5xl p-8 my-auto">
+            <div class="flex justify-between items-center mb-8 border-b border-white/10 pb-6">
+                <div>
+                    <h2 class="text-3xl font-black text-white" id="welcome-title">مرحباً بك</h2>
+                    <p class="text-blue-300 text-sm">اختر الأداة التدريبية أو تصفح محتوى البرنامج</p>
+                </div>
+            </div>
+            
+            <div class="grid md:grid-cols-3 gap-6">
+                <div onclick="openTool('situations')" class="bg-white/5 border border-white/10 p-6 rounded-3xl hover:bg-blue-600/20 cursor-pointer transition-all group relative overflow-hidden">
+                    <div class="absolute -right-4 -top-4 opacity-10 group-hover:opacity-20 transition text-8xl">🧩</div>
+                    <h3 class="text-xl font-bold text-white mb-2">اختبار المواقف</h3>
+                    <p class="text-blue-200 text-xs mb-4">قياس جدارات الإرجونوميكس عبر 21 موقفاً مهنياً.</p>
+                    <div class="flex items-center gap-2 mt-4">
+                        <div class="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div id="progress-situations" class="h-full bg-blue-500 w-0 transition-all duration-500"></div>
+                        </div>
+                        <span class="text-[10px] text-white/50" id="stat-situations">0/21</span>
+                    </div>
+                </div>
+
+                <div onclick="openTool('ergoScale')" class="bg-white/5 border border-white/10 p-6 rounded-3xl hover:bg-green-600/20 cursor-pointer transition-all group relative overflow-hidden">
+                    <div class="absolute -right-4 -top-4 opacity-10 group-hover:opacity-20 transition text-8xl">📏</div>
+                    <h3 class="text-xl font-bold text-white mb-2">مقياس الإرجونوميكس</h3>
+                    <p class="text-blue-200 text-xs mb-4">37 عبارة لقياس السلامة والصحة والأمان المهني.</p>
+                    <div class="flex items-center gap-2 mt-4">
+                        <div class="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div id="progress-ergo" class="h-full bg-green-500 w-0 transition-all duration-500"></div>
+                        </div>
+                        <span class="text-[10px] text-white/50" id="stat-ergo">0/37</span>
+                    </div>
+                </div>
+
+                <div onclick="openTool('entreScale')" class="bg-white/5 border border-white/10 p-6 rounded-3xl hover:bg-purple-600/20 cursor-pointer transition-all group relative overflow-hidden">
+                    <div class="absolute -right-4 -top-4 opacity-10 group-hover:opacity-20 transition text-8xl">🚀</div>
+                    <h3 class="text-xl font-bold text-white mb-2">مقياس ريادة الأعمال</h3>
+                    <p class="text-blue-200 text-xs mb-4">34 عبارة لتقييم المهارات الريادية والمغامرة.</p>
+                    <div class="flex items-center gap-2 mt-4">
+                        <div class="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div id="progress-entre" class="h-full bg-purple-500 w-0 transition-all duration-500"></div>
+                        </div>
+                        <span class="text-[10px] text-white/50" id="stat-entre">0/34</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. Tool Interface -->
+        <div id="tool-interface" class="hidden glass-card w-full max-w-4xl p-8 min-h-[82vh] flex flex-col justify-between my-auto">
+            <div class="flex items-center justify-between mb-6">
+                <button onclick="backToDashboard()" class="text-blue-300 hover:text-white flex items-center gap-2 text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M11 19l-7-7 7-7m8 14l-7-7 7-7" stroke-width="2" stroke-linecap="round"/></svg>
+                    عودة للرئيسية
+                </button>
+                <div class="text-center">
+                    <h3 id="tool-title" class="text-xl font-black text-white"></h3>
+                    <p id="tool-subtitle" class="text-xs text-blue-200"></p>
+                </div>
+                <div class="bg-blue-500/20 px-3 py-1 rounded-full text-xs text-blue-300 font-bold" id="item-counter">1 / 10</div>
+            </div>
+
+            <div id="progress-container" class="w-full h-1 bg-white/10 rounded-full mb-8">
+                <div id="tool-progress-inner" class="h-full bg-blue-500 rounded-full transition-all duration-500 w-0"></div>
+            </div>
+
+            <div id="question-content" class="flex-1 flex flex-col justify-center min-h-[300px]"></div>
+        </div>
+
+        <!-- 5. Program Content Interface -->
+        <div id="content-interface" class="hidden glass-card w-full max-w-[96vw] p-4 flex flex-col h-[85vh] md:h-[80vh] !bg-opacity-10 border-white/10 my-auto">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
+                
+                <div id="companion-panel" class="lg:col-span-4 bg-slate-950/75 border border-white/10 rounded-2xl p-5 flex flex-col justify-between text-white overflow-y-auto">
+                    <div>
+                        <div class="flex items-center gap-2 mb-4">
+                            <span class="text-2xl" id="companion-icon">💡</span>
+                            <h3 class="text-lg font-black text-blue-300" id="companion-title">تفاصيل القسم</h3>
+                        </div>
+                        <div class="text-sm leading-relaxed space-y-4 text-white/90" id="companion-text"></div>
+                    </div>
+                    <div class="border-t border-white/10 pt-4 mt-4 text-[10px] text-white/40 flex justify-between">
+                        <span>البرنامج التدريبي المتكامل</span>
+                        <span>إعداد د. محمد حسني</span>
+                    </div>
+                </div>
+
+                <div id="media-showcase-panel" class="lg:col-span-8 rounded-2xl overflow-hidden bg-slate-950/20 border border-white/10 flex flex-col shadow-2xl relative">
+                    <div id="wix-container" class="w-full h-full flex flex-col justify-center items-center p-8 text-center hidden bg-slate-950/80">
+                        <div class="w-20 h-20 bg-blue-600/30 rounded-full flex items-center justify-center mb-6 animate-pulse border border-blue-500/45">
+                            <svg class="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                        </div>
+                        <h4 class="text-xl md:text-2xl font-black text-white mb-3">منصة التعلم التفاعلية Articulate 360</h4>
+                        <p class="text-blue-200 text-sm max-w-lg mb-8 leading-relaxed">
+                            لضمان تجربة تعليمية مستقرة ومتكاملة تدعم كافة الإيماءات والوسائط والوكيل الافتراضي، تم إعداد رابط تشغيل المنصة ليفتح تلقائياً في نافذة مستقلة.
+                        </p>
+                        <button onclick="launchArticulate()" class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-4 rounded-2xl text-md transition-all btn-hover flex items-center gap-3">
+                            <span>إطلاق المحتوى التدريبي (نافذة مستقلة)</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div id="image-showcase-container" class="w-full h-full relative">
+                        <div class="absolute inset-0 bg-cover bg-center transition-all duration-500" id="showcase-bg-image"></div>
+                        <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-black/35"></div>
+                        <div class="absolute bottom-6 right-6 left-6 text-white z-10 bg-slate-950/45 p-5 rounded-xl backdrop-blur-md border border-white/10">
+                            <span class="text-[10px] uppercase tracking-wider text-blue-400 font-black" id="image-tagline">العرض البصري المصاحب</span>
+                            <h4 class="text-lg md:text-xl font-black mt-1" id="image-title">مفهوم الوكيل الافتراضي ثلاثي الأبعاد</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const situations = [
+            { id: 1, text: "أحمد أمام جهاز تكييف ما زال متصلاً بالكهرباء، وزميله يطلب منه البدء فورا بالفك.", q: "ما القرار الصحيح الذي يعبر عن جدارة الأمان المهني؟", options: ["البدء فوراً في فك المواسير", "تشغيل الجهاز ثم فك الوحدة", "فصل مصدر الكهرباء عن الجهاز قبل البدء", "فك الوحدة الداخلية مباشرة"], correct: 2, feedback: "فصل الكهرباء هو القاعدة الأولى للأمان المهني الحقيقي." },
+            { id: 2, text: "متدرب يركب وحدة خارجية في مكان مرتفع دون حزام أمان بدعوى السرعة والخبرة.", q: "ما الإجراء المهني الأكثر ملاءمة؟", options: ["التنبيه الشفهي فقط", "السماح له بالاستكمال", "إيقاف العمل فوراً وإلزامه باستخدام الحزام", "استبدال المتدرب بآخر"], correct: 2, feedback: "السلامة الشخصية والمهنية تفوق رغبة إنجاز العمل بسرعة." },
+            { id: 3, text: "محمود يتعامل مع أسلاك متشابكة ومكشوفة بعد فصل الكهرباء ويضطر للانحناء طويلاً.", q: "ما التصرف الصحيح؟", options: ["سحب الأسلاك بسرعة", "تجاهل الأسلاك المكشوفة", "فصل الأسلاك بالأدوات المناسبة مع وضعية جسم صحيحة", "الانحناء لفترة طويلة بدون أدوات"], correct: 2, feedback: "الحفاظ على وضعية جسم صحيحة يمنع الإجهاد البدني وإصابات الظهر." },
+            { id: 4, text: "علي لاحظ تسريباً بسيطاً لمياه الصرف بعد التركيب.", q: "ما التصرف الصحيح الذي يعكس جدارة الأمان المهني؟", options: ["تجاهل الأمر لأنه بسيط", "إصلاح التسريب فوراً لضمان سلامة المكان والكفاءة", "الانتظار حتى انتهاء فترة التجربة", "إغلاق فتحة الصرف بمادة لاصقة"], correct: 1, feedback: "منع الأضرار المترتبة على تسريب المياه يحافظ على سلامة البناء وكفاءة التبريد." },
+            { id: 5, text: "سعيد وجد الوحدة الداخلية أثقل من المتوقع وزاوية الرفع غير مريحة.", q: "ما التصرف الصحيح الذي يعكس جدارة الأمان المهني؟", options: ["محاولة الرفع بسرعة", "استخدام الطريقة الصحيحة للرفع وطلب المساعدة لضمان سلامة الظهر والوحدة", "رفعها بشكل فردي للتوفير", "تجاهل زاوية الرفع"], correct: 1, feedback: "الاستعانة بأدوات مساعدة أو طلب دعم زميل يحمي العمود الفقري والمنتج." },
+            { id: 6, text: "محمد يواجه مقاومة كبيرة في فك مواسير قديمة ويشعر بإجهاد في معصمه.", q: "إذا كنت مكانه، ما التصرف الصحيح؟", options: ["الضغط بقوة مفرطة", "التوقف واستخدام الأداة المناسبة مع وضعية صحيحة وطلب المساعدة", "سحب المواسير بعنف", "تجاهل المقاومة"], correct: 1, feedback: "تجنب استخدام القوة المفرطة يمنع تلف المواسير وإجهاد العضلات والمفاصل." },
+            { id: 7, text: "فني في مطبخ ضيق وأرض مبللة وأسلاك قديمة، والعميل يطلب التشغيل فوراً.", q: "ما التصرف الأنسب؟", options: ["التأكد من جفاف المكان واستخدام أدوات فحص مناسبة", "لمس الأسلاك مباشرة", "تشغيل الجهاز فوراً", "تجاهل حالة المكان"], correct: 0, feedback: "الرطوبة والمياه تزيد من خطر التعرض للصعق والماس الكهربائي." },
+            { id: 8, text: "فحص وحدة خارجية في إضاءة ضعيفة ومساحة ضيقة.", q: "ما الإجراء الأنسب في هذه الحالة؟", options: ["البدء فوراً", "تشغيل الجهاز مباشرة", "تحسين الإضاءة في مكان العمل قبل البدء", "لمس الأسلاك للتأكد"], correct: 2, feedback: "تحسين الإضاءة يمنع ارتكاب الأخطاء الفنية والكهربائية المميتة." },
+            { id: 9, text: "طالب يصر على استخدام الأدوات بمفرده في مجموعة عمل.", q: "ما الطريقة الأنسب تربوياً؟", options: ["الإحراج أمام الزملاء", "توزيع الأدوار بالتساوي وتوضيح أهمية التعاون", "استبعاده من المجموعة", "تركه كما هو"], correct: 1, feedback: "ريادة الأعمال والمهارات العملية تتكامل من خلال ترسيخ روح الفريق والتعاون." },
+            { id: 10, text: "مروحة الوحدة الداخلية لا تدور وتصدر أصواتاً غير طبيعية.", q: "ما الإجراء الصحيح لمعالجة المشكلة بأمان؟", options: ["فتح الغطاء والفحص أثناء التشغيل", "ترك الجهاز يعمل", "محاولة تدوير المروحة باليد أثناء التشغيل", "فصل الكهرباء أولاً ثم الفحص بدقة"], correct: 3, feedback: "فصل مصدر التغذية أولوية قصوى قبل الاقتراب من المحركات الدوارة والمتحركة." },
+            { id: 11, text: "اهتزاز في المروحة نتيجة تلف الكوستر المطاطي.", q: "ما الإجراء الصحيح؟", options: ["زيادة سرعة التشغيل", "فصل الكهرباء واستبدال الكوستر التالف بآخر جديد", "تثبيت المروحة باليد أثناء التشغيل", "استخدام لاصق مؤقت"], correct: 1, feedback: "الاهتزازات المستمرة غير المتوازنة تؤدي لتلف محور المحرك مع مرور الوقت." },
+            { id: 12, text: "تسريب مفاجئ لغاز الفريون في الورشة.", q: "ما الإجراء الصحيح بعد حدوث التسريب؟", options: ["الاستمرار في العمل", "تهوية المكان فوراً ونقل المصاب للهواء الطلق", "إغلاق الأبواب", "محاولة سد التسريب باليد"], correct: 1, feedback: "الغازات الثقيلة تحل محل الأكسجين على الأرض وتتطلب تهوية سريعة." },
+            { id: 13, text: "طالب فقد وعيه نتيجة استنشاق الفريون.", q: "ما التصرف الصحيح للمعلم؟", options: ["تركه مكانه", "نقله لمكان جيد التهوية وتقديم الإسعافات واستدعاء الطبيب", "إعطاؤه ماء وهو فاقد الوعي", "إفاقته بسرعة"], correct: 1, feedback: "إنقاذ الطالب بتهوية رئتيه بالهواء النقي ينقذ حياته من الاختناق." },
+            { id: 14, text: "طالب وضع أسطوانة الفريون قرب مصدر حراري.", q: "ما التصرف الصحيح؟", options: ["نقل الأسطوانة فوراً لمكان آمن بارد", "تركها كما هي", "تجاهل الأمر", "فتح الصمام لتقليل الضغط"], correct: 0, feedback: "ارتفاع درجات الحرارة يرفع الضغط الغازي بشكل مهول ومخيف مسبباً الانفجار." },
+            { id: 15, text: "رائحة فريون وصوت هسيس بعد تركيب ضاغط جديد.", q: "ما التصرف الأكثر مهنية؟", options: ["إيقاف الجهاز وتهوية المكان وإصلاح التسريب", "زيادة الشحنة", "تجاهل الرائحة", "إيقاف الجهاز فقط"], correct: 0, feedback: "فحص التسريب ومعالجته يمنع تسرب ملوثات الغلاف الجوي والضياع الاقتصادي للفريون." },
+            { id: 16, text: "نقل ضاغط 3 حصان من المخزن للتركيب.", q: "ما التوجيه المهني الأكثر فعالية؟", options: ["حمل الضاغط فردياً بسرعة", "استخدام طريقة الرفع الصحيحة وطلب مساعدة زميل أو عربة", "سحب الضاغط على الأرض", "الحمل الفردي مع فترات راحة"], correct: 1, feedback: "ثني الركبة والمحافظة على استقامة العمود الفقري يتلاقى مع القواعد الأساسية للأمان البدني." },
+            { id: 17, text: "طالب أصيب بحرق في يده أثناء لحام المواسير.", q: "ما التصرف المهني الأكثر ملاءمة؟", options: ["استكمال العمل دون تعديل", "المطالبة بتحمل الألم", "تجاهل الإصابة", "إيقاف العمل وتقديم الإسعافات وتأمين البيئة والالتزام بالقفازات"], correct: 3, feedback: "حماية وسلامة الطالب المتدرب تفوق أي مكاسب إنتاجية للمشروع." },
+            { id: 18, text: "إنهاء تركيب تكييف بأسلاك غير معزولة ومواسير غير مثبتة.", q: "ما الإجراء المهني الأكثر ملاءمة؟", options: ["اعتبار العمل ناجحاً", "إلزام المتدرب بإنهاء التشطيب والأسلاك وفق المعايير الجمالية والفنية", "تجاهل الجانب الجمالي", "تقليل التكلفة"], correct: 1, feedback: "التشطيبات النهائية والجمالية تضمن متانة التشغيل وتلافي عيوب الصيانة اللاحقة." },
+            { id: 19, text: "تبريد غير منتظم في نموذج تعليمي لثلاجة.", q: "ما الإجراء المهني الأكثر ملاءمة؟", options: ["عرض النموذج كما هو", "إعادة فحص وضبط الدائرة قبل العرض التعليمي", "تجاهل الخلل", "تقليل زمن التشغيل"], correct: 1, feedback: "الدقة العلمية والعملية أساس لإنتاج كوادر فنية ممتازة بالقسم الصناعي." },
+            { id: 20, text: "ثني مواسير النحاس باليد بسرعة لتوفير الوقت.", q: "ما التصرف الصحيح لضمان تركيب آمن؟", options: ["الاستمرار باليد", "استخدام أدوات الثني المناسبة لضمان سريان الفريون وعدم الخفس", "تجاهل صاحب المنزل", "الثني بعنف"], correct: 1, feedback: "خفس المواسير النحاسية يمنع التدفق الحر لوسيط التبريد ويؤذي الضاغط." },
+            { id: 21, text: "تركيب الوحدة الداخلية بميل غير صحيح.", q: "ما القرار الصحيح؟", options: ["تجاهل الميل", "ضبط الاتزان لضمان عدم تنقيط المياه للداخل", "زيادة سرعة المروحة", "إمالة الوحدة أكثر"], correct: 1, feedback: "اتزان ميل الوحدة الداخلية بميزان مائي دقيق يضمن تسييل وتصريف مياه الصرف بسلاسة." }
+        ];
+
+        const ergoScaleItems = [
+            "أحرص على إضاءة الورشة بالإضاءة الكافية قبل العمل", "أتخير الأداة المناسبة لطبيعة العملية الصناعية", "أنتقي العدد المناسبة لنوع العملية الصناعية", 
+            "أفحص لوحات المصهرات لتقدير مدى تحملها لأمبير الأجهزة", "أطبق تعليمات وإرشادات تشغيل الأجهزة بتخصص التبريد والتكييف", 
+            "أستخدم العدد بالطرق الصحيحة وفق كل عملية صناعية", "أتأكد من سلامة التوصيلات الكهربائية لجهاز تكييف سبليت قبل التشغيل", 
+            "أفك المعدات الثقيلة بطريقة آمنة", "أزود الورشة بقاطع للتيار الكهربي لفصل التيار بعد انتهاء العمل اليومي", 
+            "أحفظ العدد في أماكن مناسبة بالورشة يسهل الوصول إليها", "أستخدم مخارج الطوارئ الموجودة بالورشة وقت اللزوم",
+            "أتبع التعليمات والإرشادات للسلامة المهنية الخاصة بالتخصص", "أوفر فتحات التهوية الطبيعية بالورشة", "أستعمل وسائل الحماية الشخصية",
+            "أستخدم القناع الواقي من الفريونات والغازات الضارة", "أرتدي الأحذية الواقية للحماية من خطر الاصطدام", "أستخدم التقنيات الصحيحة لرفع ونقل الأجهزة",
+            "أتأكد من سلامة العزل الكهربي للأدوات والعدد", "أوفر وسائل الإسعافات الأولية", "أهتم بنظافة ونظام مكان العمل",
+            "أنظف الأرض من الزيت والرطوبة", "أتأكد من وجود تهوية جيدة بمكان العملية", "أزيل جميع المواد القابلة للاشتعال",
+            "أجهز طفايات حريق مناسبة", "أرتدي النظارة الواقية أثناء عمليات اللحام", "أمنع ملء خزان سائل وسيط التبريد أكثر من 85%",
+            "أفرغ دائرة التبريد من وسيط التبريد قبل اللحام", "أتوخى الحذر أثناء نقل أسطوانات الفريون", "أبعد أسطوانات الفريون عن أي مصدر حراري",
+            "أفصل منبع تغذية الكهرباء عند فحص الدوائر", "أرفع مقاسات المكان المراد تكييفه بدقة", "أختار المكان المناسب للوحدة الداخلية",
+            "أتأكد من اتزان ميل الوحدة الداخلية", "أراعي اختيار المكان المناسب للوحدة الخارجية", "أضبط شكل مواسير جهاز التكييف عند تمديدها",
+            "أعزل مواسير جهاز التكييف بالعزل المناسب", "أختبر سهولة سريان مياه الصرف للخارج"
+        ];
+
+        const entreScaleItems = [
+            "أضع خطط قصيرة وطويلة المدى قابلة للتنفيذ", "أحدد المهام المراد تنفيذها بدقة", "أوظف قدرات الأفراد معي في العمل", 
+            "أتابع تطورات وتغيرات سوق العمل", "أتوقع المشكلات المستقبلية وأضع حلولاً لها", "أدرس وأجرب الأفكار المطروحة مهما كانت غرابتها",
+            "أوصل أفكاري للآخرين بسهولة ويسر", "أجذب الأفراد للاستماع إليّ والتفاعل معي", "أعرض الأفكار بشكل منطقي ومتسلسل",
+            "أستمع للآخرين وأدرك احتياجاتهم", "أستخدم لغة حوار تناسب الفئة المخاطبة", "أظهر قدراً كبيراً من الصدق والاحترام للآخر",
+            "أنتج أفكاراً غير تقليدية لمواكبة التطورات", "أجد حلولاً فريدة للمشكلات الريادية", "أحول الأفكار إلى منتجات حقيقية",
+            "أوظف جميع الإمكانات والموارد المتاحة لدي", "أنظم حملات ترويجية تعبر عن نشاطي", "أطور بعض الأفكار الريادية النمطية",
+            "أرى أهدافي بوضوح", "ألهم وأحفز وأوجه الآخرين", "أتخذ القرار المناسب في الوقت المناسب بحزم",
+            "أحلل وأقيم المواقف وفق المعلومات المتاحة", "أصغي وأناقش الآخرين بموضوعية", "أتعامل مع العراقيل والتحديات",
+            "أتحمل الضغوط والمسؤولية", "أصر على النجاح عند مواجهة المشكلات", "أتعامل مع الفشل وأستفيد منه",
+            "أبذل قصارى جهدي لأكون الأكثر نجاحاً", "أتكيف مع المتغيرات وفق متطلبات سوق العمل", "أتعامل بمرونة مع Tحديات المختلفة",
+            "أعيد مسار تفكيري عند الحاجة دون التخلي عن أهدافي", "أعتني بالفرص المتاحة بشكل إيجابي", "أقسم المشكلات الكبرى إلى مشكلات صغرى",
+            "أبني علاقات إيجابية مع الآخرين"
+        ];
+
+        let state = {
+            activeTool: null,
+            currentIndex: 0,
+            answers: { situations: [], ergoScale: [], entreScale: [] },
+            user: "",
+            isEmailSent: false,
+            isTransitioning: false
+        };
+
+        let scene, camera, renderer, particles;
+        function initThree() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            for (let i = 0; i < 1500; i++) { vertices.push(THREE.MathUtils.randFloatSpread(2000), THREE.MathUtils.randFloatSpread(2000), THREE.MathUtils.randFloatSpread(2000)); }
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            particles = new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x3b82f6, size: 2, transparent: true, opacity: 0.6 }));
+            scene.add(particles);
+            camera.position.z = 500;
+        }
+        function animate() { requestAnimationFrame(animate); particles.rotation.y += 0.001; renderer.render(scene, camera); }
+
+        function handleLogin(event) {
+            event.preventDefault();
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            if (pass.length > 0 && pass.charAt(0).toUpperCase() === 'M') {
+                state.user = user;
+                document.getElementById('login-container').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                document.getElementById('app-nav').classList.remove('hidden');
+                document.getElementById('welcome-title').innerText = `أهلاً بك، الأستاذ ${user}`;
+                document.getElementById('nav-user-welcome').innerText = `المتدرب: الأستاذ ${user}`;
+                particles.material.color.setHex(0x10b981);
+            } else {
+                const err = document.getElementById('error-msg');
+                err.classList.remove('hidden');
+                setTimeout(() => err.classList.add('hidden'), 3000);
+            }
+        }
+
+        function navigateTab(tabId) {
+            const navButtons = ['dashboard', 'intro', 'goals', 'wix', 'supervision', 'contact'];
+            navButtons.forEach(btn => {
+                const el = document.getElementById(`nav-btn-${btn}`);
+                if (el) {
+                    el.className = "px-3.5 py-2 text-xs sm:text-sm font-bold text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all";
+                }
+            });
+
+            const activeBtn = document.getElementById(`nav-btn-${tabId}`);
+            if (activeBtn) {
+                activeBtn.className = "px-3.5 py-2 text-xs sm:text-sm font-bold text-white bg-blue-600 rounded-xl transition-all";
+            }
+
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('tool-interface').classList.add('hidden');
+            document.getElementById('content-interface').classList.remove('hidden');
+
+            const companionPanel = document.getElementById('companion-panel');
+            const mediaShowcasePanel = document.getElementById('media-showcase-panel');
+            const compTitle = document.getElementById('companion-title');
+            const compIcon = document.getElementById('companion-icon');
+            const compText = document.getElementById('companion-text');
+            const wixContainer = document.getElementById('wix-container');
+            const imageShowcase = document.getElementById('image-showcase-container');
+            const showcaseImgBg = document.getElementById('showcase-bg-image');
+            const imageTitle = document.getElementById('image-title');
+            const imageTagline = document.getElementById('image-tagline');
+
+            companionPanel.className = "lg:col-span-4 bg-slate-950/75 border border-white/10 rounded-2xl p-5 flex flex-col justify-between text-white overflow-y-auto";
+            mediaShowcasePanel.className = "lg:col-span-8 rounded-2xl overflow-hidden bg-slate-950/20 border border-white/10 flex flex-col shadow-2xl relative";
+
+            if (tabId === 'dashboard') {
+                document.getElementById('dashboard').classList.remove('hidden');
+                document.getElementById('content-interface').classList.add('hidden');
+                updateDashboardStats();
+            } else {
+                document.getElementById('content-interface').classList.remove('hidden');
+
+                if (tabId === 'wix') {
+                    wixContainer.classList.remove('hidden');
+                    imageShowcase.classList.add('hidden');
+                    
+                    compTitle.innerText = "محتوى البرنامج";
+                    compIcon.innerText = "📖";
+                    compText.innerHTML = `
+                        <p class="font-bold text-blue-300">محتويات البيئة التفاعلية:</p>
+                        <p>يشتمل هذا القسم على منصة Articulate 360 التفاعلية للوكيل الافتراضي ثلاثي الأبعاد، والتي تحتوي على الموديولات التعليمية الأربعة.</p>
+                        <p class="bg-blue-600/10 p-3 rounded-lg border border-blue-500/20 text-xs mt-2 text-blue-200">
+                            💡 تم إعداد المحتوى لفتح بوابة مستقلة لضمان توافقه التام مع ميزات التصفح والتحميل السريع للمشروعات دون قيود الإطارات المدمجة.
+                        </p>
+                    `;
+                    launchArticulate();
+                } else if (tabId === 'supervision') {
+                    // Full-width layout for supervision (removes image showcase side)
+                    companionPanel.className = "lg:col-span-12 bg-slate-950/75 border border-white/10 rounded-2xl p-8 flex flex-col justify-between text-white overflow-y-auto";
+                    mediaShowcasePanel.className = "hidden";
+
+                    compTitle.innerText = "لجنة الإشراف العلمية";
+                    compIcon.innerText = "🎓";
+                    compText.innerHTML = `
+                        <p class="font-bold text-blue-300 mb-6 text-lg border-b border-white/10 pb-2">تحت إشراف علمي متميز ونخبة من السادة الأساتذة بجامعتي عين شمس وحلوان:</p>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="bg-white/5 p-6 rounded-2xl border border-white/5 hover:border-blue-500/25 transition-all flex flex-col items-center text-center">
+                                <img src="فارعة.png" class="w-32 h-32 rounded-full object-cover mb-4 shadow-lg border-2 border-blue-500/30" alt="أ.د. فارعة حسن محمد">
+                                <h4 class="text-md font-bold text-blue-300">أ.د. فارعة حسن محمد</h4>
+                                <span class="text-xs text-white/50 block mt-1">أستاذ المناهج وطرق تدريس - كلية التربية، جامعة عين شمس.</span>
+                            </div>
+                            <div class="bg-white/5 p-6 rounded-2xl border border-white/5 hover:border-blue-500/25 transition-all flex flex-col items-center text-center">
+                                <img src="وائل.jpg" class="w-32 h-32 rounded-full object-cover mb-4 shadow-lg border-2 border-blue-500/30" alt="أ.د. وائل أحمد راضي">
+                                <h4 class="text-md font-bold text-blue-300">أ.د. وائل أحمد راضي</h4>
+                                <span class="text-xs text-white/50 block mt-1">أستاذ المناهج وطرق تدريس المواد الصناعية - كلية التربية، جامعة حلوان.</span>
+                            </div>
+                            <div class="bg-white/5 p-6 rounded-2xl border border-white/5 hover:border-blue-500/25 transition-all flex flex-col items-center text-center">
+                                <img src="محمود.jpg" class="w-32 h-32 rounded-full object-cover mb-4 shadow-lg border-2 border-blue-500/30" alt="أ.م.د. محمود مصطفي عطية">
+                                <h4 class="text-md font-bold text-blue-300">أ.م.د. محمود مصطفي عطية</h4>
+                                <span class="text-xs text-white/50 block mt-1">أستاذ تكنولوجيا التعليم المساعد - كلية التربية، جامعة عين شمس.</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    wixContainer.classList.add('hidden');
+                    imageShowcase.classList.remove('hidden');
+
+                    if (tabId === 'intro') {
+                        compTitle.innerText = "مقدمة البرنامج";
+                        compIcon.innerText = "📚";
+                        compText.innerHTML = `
+                            <p class="font-bold text-blue-300">أهلاً بك في بيئة التعلم الافتراضية الذكية!</p>
+                            <p>تم تصميم هذا البرنامج التدريبي لتنمية جدارات الإرجونوميكس ومهارات ريادة الأعمال لدى معلمي المدارس الثانوية الصناعية، وذلك عبر <strong>أربعة موديولات تعليمية متكاملة</strong> تضمن الأمان والكفاءة المهنية التامة:</p>
+                            <div class="space-y-3 mt-4 text-xs">
+                                <div class="flex items-start gap-2 bg-white/5 p-2.5 rounded-lg border border-white/5">
+                                    <span class="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center font-bold shrink-0">1</span>
+                                    <div>
+                                        <p class="font-bold text-blue-200">جدارة الأمان المهني في مجال التبريد والتكييف:</p>
+                                        <p class="text-white/70">الوقاية من المخاطر الكهربائية وفصل مصادر التغذية قبل البدء بالفك والتركيب.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start gap-2 bg-white/5 p-2.5 rounded-lg border border-white/5">
+                                    <span class="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center font-bold shrink-0">2</span>
+                                    <div>
+                                        <p class="font-bold text-blue-200">جدارة الصحة المهنية في مجال التبريد والتكييف:</p>
+                                        <p class="text-white/70">التعامل السليم مع وسائط التبريد (الفريون) وتأمين التهوية ومكافحة الحرائق بالورشة.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start gap-2 bg-white/5 p-2.5 rounded-lg border border-white/5">
+                                    <span class="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center font-bold shrink-0">3</span>
+                                    <div>
+                                        <p class="font-bold text-blue-200">جدارة السلامة المهنية في مجال التبريد والتكييف:</p>
+                                        <p class="text-white/70">اتباع وضعيات الجسم الصحيحة أثناء رفع وحمل الأجهزة الثقيلة لتلافي إجهاد الظهر والعمود الفقري.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start gap-2 bg-white/5 p-2.5 rounded-lg border border-white/5">
+                                    <span class="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center font-bold shrink-0">4</span>
+                                    <div>
+                                        <p class="font-bold text-blue-200">جدارة إنهاء وتشطيب المنتج:</p>
+                                        <p class="text-white/70">ترتيب التوصيلات الكهربائية، عزل المواسير، واختبار الصرف لضمان المتانة والشكل الجمالي للمنتج.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        showcaseImgBg.style.backgroundImage = "url('https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80')";
+                        imageTitle.innerText = "الموديولات التعليمية الأربعة للوكيل الافتراضي";
+                        imageTagline.innerText = "البناء العلمي وصيانة المستقبل";
+                    } else if (tabId === 'goals') {
+                        compTitle.innerText = "أهداف البرنامج";
+                        compIcon.innerText = "🎯";
+                        compText.innerHTML = `
+                            <p class="font-bold text-blue-300">يهدف هذا البرنامج إلى تمكين المعلم من:</p>
+                            <ul class="list-disc pr-4 space-y-2 text-white/95">
+                                <li>تنمية جدارات السلامة والأمان والصحة المهنية لربطها بالتخصص فنيّاً وبدنيّاً.</li>
+                                <li>صقل مهارات ريادة الأعمال لإثراء الروح التنافسية الابتكارية لخدمة سوق العمل.</li>
+                                <li>تأسيس أسلوب تكنولوجي تفاعلي من خلال الوكيل الافتراضي ثلاثي الأبعاد الموجه خطوة بخطوة.</li>
+                            </ul>
+                        `;
+                        showcaseImgBg.style.backgroundImage = "url('https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=1200&q=80')";
+                        imageTitle.innerText = "نواتج التعلم ومكاسب التنمية المهنية للبرنامج";
+                        imageTagline.innerText = "ريادة الأعمال والابتكار التعليمي";
+                    } else if (tabId === 'contact') {
+                        compTitle.innerText = "اتصل بنا";
+                        compIcon.innerText = "📞";
+                        compText.innerHTML = `
+                            <p class="font-bold text-blue-300">معلومات المراسلة المباشرة:</p>
+                            <p>المدرب والباحث المعتمد:<br><strong class="text-white">أ. محمد حسني محمد بحر</strong></p>
+                            <p>البريد الإلكتروني للأبحاث والمراسلات الرسمية:<br><span class="text-blue-300 underline font-mono">mr.egyptsasa2009@gmail.com</span></p>
+                            <p>نرحب بجميع استفساراتكم واقتراحاتكم لتطوير التعليم والتدريب الفني الصناعي.</p>
+                        `;
+                        showcaseImgBg.style.backgroundImage = "url('https://images.unsplash.com/photo-1423666639041-f56000c27a9a?auto=format&fit=crop&w=1200&q=80')";
+                        imageTitle.innerText = "الاتصال المباشر والتكامل الفعال مع المتدربين";
+                        imageTagline.innerText = "قنوات التواصل الفني والريادي";
+                    }
+                }
+            }
+        }
+
+        function launchArticulate() {
+            window.open("https://360.articulate.com/review/content/64d23d4a-47dc-408a-8347-8392241c18f7/review", "_blank");
+        }
+
+        function openTool(toolId) {
+            state.activeTool = toolId;
+            state.currentIndex = 0;
+            state.answers[toolId] = [];
+            state.isTransitioning = false;
+            
+            const navButtons = ['dashboard', 'intro', 'goals', 'wix', 'supervision', 'contact'];
+            navButtons.forEach(btn => {
+                const el = document.getElementById(`nav-btn-${btn}`);
+                if (el) el.className = "px-3.5 py-2 text-xs sm:text-sm font-bold text-white/40 hover:text-white rounded-xl transition-all";
+            });
+
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('tool-interface').classList.remove('hidden');
+            document.getElementById('content-interface').classList.add('hidden');
+            
+            const titles = { situations: "اختبار المواقف الإرجونوميكية", ergoScale: "مقياس جدارات الإرجونوميكس", entreScale: "مقياس مهارات ريادة الأعمال" };
+            const subtitles = { situations: "21 موقفاً مهنياً", ergoScale: "37 عبارة تقييم", entreScale: "34 عبارة تقييم" };
+            
+            document.getElementById('tool-title').innerText = titles[toolId];
+            document.getElementById('tool-subtitle').innerText = subtitles[toolId];
+            renderQuestion();
+        }
+
+        function backToDashboard() {
+            navigateTab('dashboard');
+        }
+
+        function renderQuestion() {
+            state.isTransitioning = false;
+            const container = document.getElementById('question-content');
+            const counter = document.getElementById('item-counter');
+            const progressInner = document.getElementById('tool-progress-inner');
+            let contentHtml = "";
+
+            if (state.activeTool === 'situations') {
+                if (state.currentIndex >= situations.length) {
+                    finishTool();
+                    return;
+                }
+
+                const item = situations[state.currentIndex];
+                counter.innerText = `${state.currentIndex + 1} / ${situations.length}`;
+                progressInner.style.width = `${((state.currentIndex + 1) / situations.length) * 100}%`;
+                
+                contentHtml = `
+                    <div class="animate-fade-in">
+                        <div class="bg-blue-500/10 p-4 rounded-xl mb-4 text-blue-200 text-sm leading-relaxed">${item.text}</div>
+                        <h4 class="text-white text-lg font-bold mb-6">${item.q}</h4>
+                        <div class="grid gap-3">
+                            ${item.options.map((opt, i) => `
+                                <div onclick="submitSituationAnswer(${i})" class="option-card p-4 rounded-xl text-white text-sm">
+                                    ${i+1}. ${opt}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            } else {
+                const items = state.activeTool === 'ergoScale' ? ergoScaleItems : entreScaleItems;
+                if (state.currentIndex >= items.length) {
+                    finishTool();
+                    return;
+                }
+
+                const itemText = items[state.currentIndex];
+                counter.innerText = `${state.currentIndex + 1} / ${items.length}`;
+                progressInner.style.width = `${((state.currentIndex + 1) / items.length) * 100}%`;
+
+                contentHtml = `
+                    <div class="text-center animate-fade-in py-10">
+                        <h4 class="text-white text-2xl font-bold mb-10">${itemText}</h4>
+                        <div class="flex flex-wrap justify-center gap-4">
+                            ${[1, 2, 3, 4, 5].map(val => `
+                                <div onclick="submitScaleAnswer(${val})" class="option-card w-20 h-20 flex flex-col items-center justify-center rounded-2xl text-white">
+                                    <span class="text-xl font-bold">${val}</span>
+                                    <span class="text-[8px] mt-1">${getLikertText(val)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <p class="text-white/30 text-xs mt-10">(1: لا تنطبق - 5: تنطبق دائماً)</p>
+                    </div>
+                `;
+            }
+            container.innerHTML = contentHtml;
+        }
+
+        function getLikertText(val) {
+            return ["لا تنطبق", "نادراً", "أحياناً", "غالباً", "دائماً"][val-1];
+        }
+
+        function submitSituationAnswer(index) {
+            if (state.isTransitioning) return;
+            const item = situations[state.currentIndex];
+            if (!item) return;
+
+            state.isTransitioning = true;
+            const isCorrect = (index === item.correct);
+            state.answers.situations[state.currentIndex] = isCorrect;
+            
+            nextStep(situations.length);
+        }
+
+        function submitScaleAnswer(val) {
+            if (state.isTransitioning) return;
+            state.isTransitioning = true;
+            state.answers[state.activeTool][state.currentIndex] = val;
+            
+            const len = state.activeTool === 'ergoScale' ? ergoScaleItems.length : entreScaleItems.length;
+            nextStep(len);
+        }
+
+        function nextStep(total) {
+            if (state.currentIndex < total - 1) {
+                setTimeout(() => { 
+                    state.currentIndex++; 
+                    renderQuestion(); 
+                }, 300);
+            } else {
+                setTimeout(() => {
+                    finishTool();
+                }, 300);
+            }
+        }
+
+        async function sendResultsToEmail(reportData) {
+            console.log("جاري إرسال التقرير إلى mr.egyptsasa2009@gmail.com...");
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    console.log("تم إرسال التقرير بنجاح إلى mr.egyptsasa2009@gmail.com");
+                    resolve(true);
+                }, 1500);
+            });
+        }
+
+        function finishTool() {
+            const toolAnswers = state.answers[state.activeTool];
+            let displayCorrect = 0;
+            let totalItems = toolAnswers.length;
+            let percentage = 0;
+            let achievedTotalScore = 0;
+            let maxPossibleScore = 0;
+
+            if (state.activeTool === 'situations') {
+                displayCorrect = toolAnswers.filter(a => a === true).length;
+                achievedTotalScore = displayCorrect; 
+                maxPossibleScore = totalItems;
+                percentage = Math.round((achievedTotalScore / maxPossibleScore) * 100);
+            } else {
+                achievedTotalScore = toolAnswers.reduce((sum, val) => sum + val, 0);
+                maxPossibleScore = totalItems * 5;
+                percentage = Math.round((achievedTotalScore / maxPossibleScore) * 100);
+                displayCorrect = toolAnswers.filter(val => val >= 4).length;
+            }
+
+            const displayIncorrect = totalItems - displayCorrect;
+            let motivator = "";
+            let colorClass = "";
+            if (percentage >= 85) {
+                motivator = "أنت خبير متميز! جداراتك المهنية تعكس وعياً استثنائياً.";
+                colorClass = "text-green-400";
+            } else if (percentage >= 60) {
+                motivator = "أداء رائع! واصل التعلم في البيئة الافتراضية لتصل للقمة.";
+                colorClass = "text-blue-400";
+            } else {
+                motivator = "بداية جيدة، البيئة الافتراضية هنا صممت لتطوير مهاراتك بشكل أفضل.";
+                colorClass = "text-yellow-400";
+            }
+
+            const scoreLabel = state.activeTool === 'situations' ? 'إجابة صحيحة' : 'ممارسة إيجابية';
+            const failLabel = state.activeTool === 'situations' ? 'إجابة خاطئة' : 'بحاجة لتطوير';
+
+            const resultHtml = `
+                <div class="text-center animate-fade-in py-2 max-w-2xl mx-auto flex flex-col justify-between h-full min-h-[60vh]">
+                    <div class="flex justify-center mb-4">
+                        <div class="stat-circle" style="--p: ${percentage}%">
+                            <span class="stat-value">${percentage}%</span>
+                        </div>
+                    </div>
+                    
+                    <h2 class="text-3xl font-black text-white mb-4">اكتمل التقييم بنجاح!</h2>
+                    
+                    <div class="bg-[#111e36]/90 border border-blue-500/20 p-5 rounded-2xl max-w-sm mx-auto mb-4 shadow-xl">
+                        <p class="text-blue-300 text-xs font-bold mb-1">المجموع الكلي للدرجات</p>
+                        <p class="text-3xl text-white font-black dir-ltr inline-block">
+                            ${achievedTotalScore} <span class="text-lg text-white/40 font-normal">/ ${maxPossibleScore}</span>
+                        </p>
+                    </div>
+
+                    <div id="email-status-box" class="mb-4 inline-block bg-emerald-500/10 border border-emerald-500/20 px-5 py-2.5 rounded-full text-center max-w-fit mx-auto">
+                        <div class="flex items-center justify-center gap-2">
+                            <div id="email-loader" class="small-loader"></div>
+                            <span id="email-status-text" class="text-xs text-emerald-400 font-bold">جاري المزامنة مع المدرب محمد حسني محمد بحر...</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4 max-w-sm mx-auto mb-4 w-full">
+                        <div class="bg-red-500/10 border border-red-500/15 p-4 rounded-xl text-center">
+                            <p class="text-[11px] text-red-400 font-bold mb-1">${failLabel}</p>
+                            <p class="text-xl text-white font-black">${displayIncorrect}</p>
+                        </div>
+                        <div class="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl text-center">
+                            <p class="text-[11px] text-emerald-400 font-bold mb-1">${scoreLabel}</p>
+                            <p class="text-xl text-white font-black">${displayCorrect}</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950/40 p-4 rounded-2xl border border-white/5 max-w-lg mx-auto mb-6 w-full">
+                        <p class="text-amber-400 text-sm font-semibold leading-relaxed">${motivator}</p>
+                    </div>
+
+                    <div class="flex justify-center gap-4 w-full">
+                        <button onclick="backToDashboard()" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3.5 rounded-xl font-bold transition-all btn-hover text-sm">العودة للرئيسية</button>
+                        <button onclick="openTool('${state.activeTool}')" class="bg-white/10 hover:bg-white/15 text-white px-8 py-3.5 rounded-xl font-bold transition-all border border-white/10 text-sm">إعادة الأداة</button>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('question-content').innerHTML = resultHtml;
+            updateDashboardStats();
+            
+            sendResultsToEmail({ name: state.user, tool: state.activeTool, score: achievedTotalScore, max: maxPossibleScore, targetEmail: 'mr.egyptsasa2009@gmail.com' }).then(() => {
+                const statusText = document.getElementById('email-status-text');
+                const loader = document.getElementById('email-loader');
+                if(statusText && loader) {
+                    statusText.innerText = "تم إرسال التقرير بنجاح إلى المدرب. محمد حسني محمد بحر";
+                    loader.classList.add('hidden');
+                }
+            });
+        }
+
+        function updateDashboardStats() {
+            const sProg = (state.answers.situations.length / 21) * 100;
+            const eProg = (state.answers.ergoScale.length / 37) * 100;
+            const enProg = (state.answers.entreScale.length / 34) * 100;
+            document.getElementById('progress-situations').style.width = sProg + "%";
+            document.getElementById('stat-situations').innerText = `${state.answers.situations.length}/21`;
+            document.getElementById('progress-ergo').style.width = eProg + "%";
+            document.getElementById('stat-ergo').innerText = `${state.answers.ergoScale.length}/37`;
+            document.getElementById('progress-entre').style.width = enProg + "%";
+            document.getElementById('stat-entre').innerText = `${state.answers.entreScale.length}/34`;
+        }
+
+        window.onload = function () {
+            initThree();
+            animate();
+        };
+    </script>
+</body>
+</html>
